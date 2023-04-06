@@ -63,7 +63,7 @@ class Encoder(nn.Module):
             input_weighted[:, t, :] = weighted_input
             input_encoded[:, t, :] = hidden[-1]
 
-        return input_weighted, input_encoded, attn_weights
+        return input_weighted, input_encoded
 
 
 class Decoder(nn.Module):

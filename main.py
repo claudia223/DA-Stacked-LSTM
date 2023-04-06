@@ -12,8 +12,10 @@ from sklearn.metrics import mean_squared_error
 
 
 import matplotlib.pyplot as plt
+from matplotlib import animation
 import pandas as pd
 import numpy as np
+import tifffile as tiff
 
 import utils
 from modules import Encoder, Decoder
@@ -149,7 +151,7 @@ def train_iteration(t_net: DaRnnNet, loss_func: typing.Callable, X, y_history, y
     t_net.enc_opt.zero_grad()
     t_net.dec_opt.zero_grad()
 
-    _, input_encoded,_ = t_net.encoder(numpy_to_tvar(X))
+    _, input_encoded = t_net.encoder(numpy_to_tvar(X))
     y_pred = t_net.decoder(input_encoded, numpy_to_tvar(y_history))
 
     y_true = numpy_to_tvar(y_target)
@@ -164,10 +166,16 @@ def train_iteration(t_net: DaRnnNet, loss_func: typing.Callable, X, y_history, y
 
 def predict(t_net: DaRnnNet, t_dat: TrainData, train_size: int, batch_size: int, T: int, on_train=False):
     out_size = t_dat.targs.shape[1]
+    input_weighted = []
+    count = 0
     if on_train:
         y_pred = np.zeros((train_size - T + 1, out_size))
     else:
+        print(batch_size)
         y_pred = np.zeros((t_dat.feats.shape[0] - train_size, out_size))
+
+        print("len ypred: ----------------------------------------------------------------------")
+        print(len(y_pred))
 
     for y_i in range(0, len(y_pred), batch_size):
         y_slc = slice(y_i, y_i + batch_size)
@@ -186,15 +194,18 @@ def predict(t_net: DaRnnNet, t_dat: TrainData, train_size: int, batch_size: int,
             y_history[b_i, :] = t_dat.targs[idx]
 
         y_history = numpy_to_tvar(y_history)
-        _, input_encoded, attn_weights = t_net.encoder(numpy_to_tvar(X))
+        
+        input_weight, input_encoded = t_net.encoder(numpy_to_tvar(X))
+        if not on_train:
+            input_weighted.append(input_weight)
+
         y_pred[y_slc] = t_net.decoder(input_encoded, y_history).cpu().data.numpy()
 
-    return y_pred, attn_weights
+    return y_pred, input_weighted
 
 
 save_plots = True
 debug = False
-
 
 
 raw_data = pd.read_csv(os.path.join("data", "data1.csv"), nrows=100 if debug else None)
@@ -211,15 +222,34 @@ logger.info(f"Shape of data: {raw_data.shape}.\nMissing in data: {raw_data.isnul
 targ_cols = ('200',)
 data, scaler = preprocess_data(raw_data, targ_cols)
 
+
 da_rnn_kwargs = {"batch_size": 128, "T": 10}
 config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
 
+if os.path.exists("weight_tensor.pt"):
+    weight_tensor = torch.load("weight_tensor.pt")
+    iter_loss = np.load("iter_loss.npy")
+    epoch_loss = np.load("epoch_loss.npy")
+    final_y_pred = np.load("final_y_pred.npy")
+
+else:
+
+    iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
+    final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
+
+    # print("Input weights: ")
+    # print(len(input_weighted))
+
+    weight_tensor = torch.cat(input_weighted, dim=0)
+    torch.save(weight_tensor,"weight_tensor.pt")
+    np.save("iter_loss.npy", iter_loss)
+    np.save("epoch_loss.npy", epoch_loss)
+    np.save("final_y_pred.npy",final_y_pred)
 
 
-iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
-final_y_pred, weigthted_inputs = predict(model, data, config.train_size, config.batch_size, config.T)
 
-print(weigthted_inputs.shape)
+
+print("finish")
 
 plt.figure()
 plt.semilogy(range(len(iter_loss)), iter_loss)
@@ -234,6 +264,49 @@ plt.plot(final_y_pred, label='Predicted')
 plt.plot(data.targs[config.train_size:], label="True")
 plt.legend(loc='upper left')
 utils.save_or_show_plot("final_predicted.png", save_plots)
+
+
+video = tiff.imread('./data/test.tif')
+
+# Load your video here and assign it to a variable "video"
+# video = load_video('your_video.mp4') # replace 'your_video.mp4' with the path to your video file
+
+# Define a function to create a heatmap plot with the original video as background
+def plot_heatmap_with_video(frame, data, video):
+    # plot the original video frame as the background
+    plt.imshow(video[frame], cmap='gray')
+
+    # plot the heatmap as a transparent overlay on top of the original video frame
+    # in reshape the values are (n_frames, height, width)
+    plt.imshow(data.reshape((20, 20)), alpha=0.5, cmap='coolwarm')
+
+    # add a colorbar to the plot
+    plt.colorbar()
+
+# Define a function to update the heatmap and input for each frame of the animation
+def update(frame):
+    plt.clf()  # Clear the previous plot
+    
+    print(frame)
+    # we have tensor of shape torch.Size([398]), we need 20*20
+    new_frame = weight_tensor[frame,1,:]
+    new_frame = new_frame.detach().numpy()
+    # we now add two new values at at 199?? and 200 (yes)
+    new_frame = np.insert(new_frame,199,0)
+    new_frame = np.insert(new_frame,200,0)
+    # Plot the heatmap and video for the current frame
+    plot_heatmap_with_video(frame, np.absolute(new_frame), video)
+    
+    plt.title('Frame {}'.format(frame))
+    plt.tight_layout()
+
+# Create the animation
+fig = plt.figure(figsize=(6, 6))
+# Frames need to be numbver of frames we want in our animation
+ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
+print("finish 2")
+ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
+print("finish 3")
 
 
 
