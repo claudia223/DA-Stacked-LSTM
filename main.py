@@ -207,66 +207,74 @@ def predict(t_net: DaRnnNet, t_dat: TrainData, train_size: int, batch_size: int,
 save_plots = True
 debug = False
 
+def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "weight_tensor.pt", iter_loss_dir="iter_loss.npy" , \
+             epoch_loss_dir= "epoch_loss.npy", final_y_pred_dir="final_y_pred.npy" ):
+    
+    raw_data = pd.read_csv(data)
 
-raw_data = pd.read_csv(os.path.join("data", "data1.csv"), nrows=100 if debug else None)
-#print(raw_data)
-#print(raw_data.shape)
+    # For every pixel in area we want a column with its intensity at different times.
+    logger.info(f"Shape of data: {raw_data.shape}.\nMissing in data: {raw_data.isnull().sum().sum()}.")
+    # print(list(raw_data.columns)) -> first column name is # 1 (TODO: fix)
 
-#raw_data = pd.read_csv(os.path.join("data", "nasdaq100_padding.csv"), nrows=100 if debug else None)
-# print(raw_data.shape)
+    # This are the columns we want to use as labels
+    
+    data, scaler = preprocess_data(raw_data, targ_cols)
 
-# For every pixel in area we want a column with its intensity at different times.
-logger.info(f"Shape of data: {raw_data.shape}.\nMissing in data: {raw_data.isnull().sum().sum()}.")
-# print(list(raw_data.columns)) -> first column name is # 1 (TODO: fix)
+    # We can change batch_size and T
+    da_rnn_kwargs = {"batch_size": 128, "T": 10}
+    config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
 
-targ_cols = ('200',)
-data, scaler = preprocess_data(raw_data, targ_cols)
+    if os.path.exists(weight_tensor_dir):
+        weight_tensor = torch.load(weight_tensor_dir)
+        iter_loss = np.load(iter_loss_dir)
+        epoch_loss = np.load(epoch_loss_dir)
+        final_y_pred = np.load(final_y_pred_dir)
 
-
-da_rnn_kwargs = {"batch_size": 128, "T": 10}
-config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
-
-if os.path.exists("weight_tensor.pt"):
-    weight_tensor = torch.load("weight_tensor.pt")
-    iter_loss = np.load("iter_loss.npy")
-    epoch_loss = np.load("epoch_loss.npy")
-    final_y_pred = np.load("final_y_pred.npy")
-
-else:
-
-    iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
-    final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
-
-    # print("Input weights: ")
-    # print(len(input_weighted))
-
-    weight_tensor = torch.cat(input_weighted, dim=0)
-    torch.save(weight_tensor,"weight_tensor.pt")
-    np.save("iter_loss.npy", iter_loss)
-    np.save("epoch_loss.npy", epoch_loss)
-    np.save("final_y_pred.npy",final_y_pred)
+    else:
+        iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
+        final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
 
 
+        weight_tensor = torch.cat(input_weighted, dim=0)
+        torch.save(weight_tensor, weight_tensor_dir)
+        np.save(iter_loss_dir, iter_loss)
+        np.save(epoch_loss_dir, epoch_loss)
+        np.save(final_y_pred_dir,final_y_pred)
+
+    print(weight_tensor.shape)
+
+    #create_plots(iter_loss, epoch_loss, final_y_pred, data, config)
+    
+    # This code saves the model:
+
+    #with open(os.path.join("data", "da_rnn_kwargs.json"), "w") as fi:
+        # json.dump(da_rnn_kwargs, fi, indent=4)
+    #joblib.dump(scaler, os.path.join("data", "scaler.pkl"))
+    #torch.save(model.encoder.state_dict(), os.path.join("data", "encoder.torch"))
+    #torch.save(model.decoder.state_dict(), os.path.join("data", "decoder.torch"))
 
 
-print("finish")
+def create_plots(iter_loss, epoch_loss, final_y_pred, data, config):
+    plt.figure()
+    plt.semilogy(range(len(iter_loss)), iter_loss)
+    utils.save_or_show_plot("iter_loss.png", save_plots)
 
-plt.figure()
-plt.semilogy(range(len(iter_loss)), iter_loss)
-utils.save_or_show_plot("iter_loss.png", save_plots)
+    plt.figure()
+    plt.semilogy(range(len(epoch_loss)), epoch_loss)
+    utils.save_or_show_plot("epoch_loss.png", save_plots)
 
-plt.figure()
-plt.semilogy(range(len(epoch_loss)), epoch_loss)
-utils.save_or_show_plot("epoch_loss.png", save_plots)
-
-plt.figure()
-plt.plot(final_y_pred, label='Predicted')
-plt.plot(data.targs[config.train_size:], label="True")
-plt.legend(loc='upper left')
-utils.save_or_show_plot("final_predicted.png", save_plots)
+    plt.figure()
+    plt.plot(final_y_pred, label='Predicted')
+    plt.plot(data.targs[config.train_size:], label="True")
+    plt.legend(loc='upper left')
+    utils.save_or_show_plot("final_predicted.png", save_plots)
 
 
-video = tiff.imread('./data/test.tif')
+
+
+
+
+#video = tiff.imread('./data/test.tif')
 
 # Load your video here and assign it to a variable "video"
 # video = load_video('your_video.mp4') # replace 'your_video.mp4' with the path to your video file
@@ -275,24 +283,25 @@ video = tiff.imread('./data/test.tif')
 def plot_heatmap_with_video(frame, data, video):
     # plot the original video frame as the background
     plt.imshow(video[frame], cmap='gray')
-
+    
+    height, width = video[frame].shape
     # plot the heatmap as a transparent overlay on top of the original video frame
-    # in reshape the values are (n_frames, height, width)
-    plt.imshow(data.reshape((20, 20)), alpha=0.5, cmap='coolwarm')
+    # in reshape the values are (height, width)
+    plt.imshow(data.reshape((height, width)), alpha=0.5, cmap='coolwarm')
 
     # add a colorbar to the plot
     plt.colorbar()
 
 # Define a function to update the heatmap and input for each frame of the animation
-def update(frame):
+def update(frame, weight_tensor):
     plt.clf()  # Clear the previous plot
-    
-    print(frame)
+  
     # we have tensor of shape torch.Size([398]), we need 20*20
     new_frame = weight_tensor[frame,1,:]
     new_frame = new_frame.detach().numpy()
     # we now add two new values at at 199?? and 200 (yes)
-    new_frame = np.insert(new_frame,199,0)
+    
+    new_frame = np.insert(new_frame,1892,0)
     new_frame = np.insert(new_frame,200,0)
     # Plot the heatmap and video for the current frame
     plot_heatmap_with_video(frame, np.absolute(new_frame), video)
@@ -301,18 +310,18 @@ def update(frame):
     plt.tight_layout()
 
 # Create the animation
-fig = plt.figure(figsize=(6, 6))
+#fig = plt.figure(figsize=(6, 6))
 # Frames need to be numbver of frames we want in our animation
-ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
-print("finish 2")
-ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
-print("finish 3")
+#ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
+#ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
 
 
 
-with open(os.path.join("data", "da_rnn_kwargs.json"), "w") as fi:
-    json.dump(da_rnn_kwargs, fi, indent=4)
 
-joblib.dump(scaler, os.path.join("data", "scaler.pkl"))
-torch.save(model.encoder.state_dict(), os.path.join("data", "encoder.torch"))
-torch.save(model.decoder.state_dict(), os.path.join("data", "decoder.torch"))
+
+
+
+
+
+run_all("resized_data.csv",('1892',),"weight_tensor_rs.pt", "iter_loss_rs.npy" , \
+             "epoch_loss_rs.npy", "final_y_pred_rs.npy" )

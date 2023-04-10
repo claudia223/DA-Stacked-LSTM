@@ -40,4 +40,3 @@ def numpy_to_tvar(x):
     return Variable(torch.from_numpy(x).type(torch.FloatTensor).to(device))
 
 
-
