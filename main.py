@@ -221,10 +221,11 @@ def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "we
     data, scaler = preprocess_data(raw_data, targ_cols)
 
     # We can change batch_size and T
-    da_rnn_kwargs = {"batch_size": 128, "T": 10}
+    da_rnn_kwargs = {"batch_size": 20, "T": 10}
     config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
 
     if os.path.exists(weight_tensor_dir):
+        print("NO")
         weight_tensor = torch.load(weight_tensor_dir)
         iter_loss = np.load(iter_loss_dir)
         epoch_loss = np.load(epoch_loss_dir)
@@ -232,8 +233,9 @@ def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "we
 
     else:
         iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
+        print("After predict")
         final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
-
+        
 
         weight_tensor = torch.cat(input_weighted, dim=0)
         torch.save(weight_tensor, weight_tensor_dir)
@@ -242,6 +244,8 @@ def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "we
         np.save(final_y_pred_dir,final_y_pred)
 
     print(weight_tensor.shape)
+
+    return weight_tensor
 
     #create_plots(iter_loss, epoch_loss, final_y_pred, data, config)
     
@@ -274,7 +278,7 @@ def create_plots(iter_loss, epoch_loss, final_y_pred, data, config):
 
 
 
-#video = tiff.imread('./data/test.tif')
+video = tiff.imread('./data/test.tif')
 
 # Load your video here and assign it to a variable "video"
 # video = load_video('your_video.mp4') # replace 'your_video.mp4' with the path to your video file
@@ -293,7 +297,8 @@ def plot_heatmap_with_video(frame, data, video):
     plt.colorbar()
 
 # Define a function to update the heatmap and input for each frame of the animation
-def update(frame, weight_tensor):
+# Weight tensor as global variable TODO: Change this.
+def update(frame):
     plt.clf()  # Clear the previous plot
   
     # we have tensor of shape torch.Size([398]), we need 20*20
@@ -301,27 +306,22 @@ def update(frame, weight_tensor):
     new_frame = new_frame.detach().numpy()
     # we now add two new values at at 199?? and 200 (yes)
     
-    new_frame = np.insert(new_frame,1892,0)
-    new_frame = np.insert(new_frame,200,0)
+    #new_frame = np.insert(new_frame,1892,0)
+    new_frame = np.insert(new_frame,190,0)
     # Plot the heatmap and video for the current frame
     plot_heatmap_with_video(frame, np.absolute(new_frame), video)
     
     plt.title('Frame {}'.format(frame))
     plt.tight_layout()
 
-# Create the animation
-#fig = plt.figure(figsize=(6, 6))
-# Frames need to be numbver of frames we want in our animation
-#ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
-#ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
 
-
-
-
-
-
-
-
-
-run_all("resized_data.csv",('1892',),"weight_tensor_rs.pt", "iter_loss_rs.npy" , \
+weight_tensor = run_all("data/data190.csv",('190',),"weight_tensor_rs.pt", "iter_loss_rs.npy" , \
              "epoch_loss_rs.npy", "final_y_pred_rs.npy" )
+
+
+# Create the animation
+fig = plt.figure(figsize=(6, 6))
+# Frames need to be numbver of frames we want in our animation
+# Frames used to be 8700
+ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
+ani.save('heatmap_new.mp4', writer='ffmpeg', bitrate=1000)
