@@ -257,10 +257,11 @@ def run_all(data="splits/crop_0.csv", targ_cols= ('937',) ,  weight_tensor_dir= 
     data, scaler = preprocess_data(raw_data, targ_cols)
 
     # We can change batch_size and T
-    da_rnn_kwargs = {"batch_size": 128, "T": 10}
+    da_rnn_kwargs = {"batch_size": 20, "T": 10}
     config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
     
     if os.path.exists(weight_tensor_dir):
+        print("NO")
         weight_tensor = torch.load(weight_tensor_dir)
         iter_loss = np.load(iter_loss_dir)
         epoch_loss = np.load(epoch_loss_dir)
@@ -306,9 +307,7 @@ def create_plots(iter_loss, epoch_loss, final_y_pred, data, config):
     utils.save_or_show_plot("final_predicted.png", save_plots)
 
 
-
-
-#video = tiff.imread('./data/test.tif')
+video = tiff.imread('./data/test.tif')
 
 # Load your video here and assign it to a variable "video"
 # video = load_video('your_video.mp4') # replace 'your_video.mp4' with the path to your video file
@@ -327,7 +326,8 @@ def plot_heatmap_with_video(frame, data, video):
     plt.colorbar()
 
 # Define a function to update the heatmap and input for each frame of the animation
-def update(frame, weight_tensor):
+# Weight tensor as global variable TODO: Change this.
+def update(frame):
     plt.clf()  # Clear the previous plot
   
     # we have tensor of shape torch.Size([398]), we need 20*20
@@ -335,8 +335,8 @@ def update(frame, weight_tensor):
     new_frame = new_frame.detach().numpy()
     # we now add two new values at at 199?? and 200 (yes)
     
-    new_frame = np.insert(new_frame,1892,0)
-    new_frame = np.insert(new_frame,200,0)
+    #new_frame = np.insert(new_frame,1892,0)
+    new_frame = np.insert(new_frame,190,0)
     # Plot the heatmap and video for the current frame
     plot_heatmap_with_video(frame, np.absolute(new_frame), video)
     
@@ -352,7 +352,7 @@ run_all("./splits/crop_4.csv",('936',),"./results_4/weight_tensor_rs.pt", "iter_
 
 
 # Create the animation
-#fig = plt.figure(figsize=(6, 6))
+fig = plt.figure(figsize=(6, 6))
 # Frames need to be numbver of frames we want in our animation
 #ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
 #ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
