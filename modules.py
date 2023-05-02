@@ -1,3 +1,10 @@
+"""
+Based on the original DA-RNN encoder and decoder network: 
+
+ttps://github.com/Seanny123/da-rnn
+
+"""
+
 import torch
 from torch import nn
 from torch.autograd import Variable

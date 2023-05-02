@@ -26,7 +26,12 @@ from constants import device
 logger = utils.setup_log()
 logger.info(f"Using computation device: {device}")
 
+"""
+Based on the original DA-RNN encoder and decoder network: 
 
+ttps://github.com/Seanny123/da-rnn
+
+"""
 def preprocess_data(dat, col_names) -> Tuple[TrainData, StandardScaler]:
     print(col_names)
     scale = StandardScaler().fit(dat)
@@ -76,7 +81,7 @@ def train(net: DaRnnNet, train_data: TrainData, t_cfg: TrainConfig, n_epochs=10,
     iter_per_epoch = int(np.ceil(t_cfg.train_size * 1. / t_cfg.batch_size))
     iter_losses = np.zeros(n_epochs * iter_per_epoch)
     epoch_losses = np.zeros(n_epochs)
-    logger.info(f"Iterations per epoch: {t_cfg.train_size * 1. / t_cfg.batch_size:3.3f} ~ {iter_per_epoch:d}.")
+    logger.info(f"Iterations per epoch: {t_cfg.traToin_size * 1. / t_cfg.batch_size:3.3f} ~ {iter_per_epoch:d}.")
 
     n_iter = 0
 
@@ -98,7 +103,9 @@ def train(net: DaRnnNet, train_data: TrainData, t_cfg: TrainConfig, n_epochs=10,
         epoch_losses[e_i] = np.mean(iter_losses[range(e_i * iter_per_epoch, (e_i + 1) * iter_per_epoch)])
 
 
-        if e_i % 10 == 0:
+        #if e_i % 5 == 0 
+        if (e_i % 5 == 0):
+            
             y_test_pred,_ = predict(net, train_data,
                                   t_cfg.train_size, t_cfg.batch_size, t_cfg.T,
                                   on_train=False)
@@ -114,11 +121,11 @@ def train(net: DaRnnNet, train_data: TrainData, t_cfg: TrainConfig, n_epochs=10,
 
             plt.figure()
             plt.plot(range(1, 1 + len(train_data.targs)), train_data.targs,
-                     label="True")
+                     label="True") #color= "blue"
             plt.plot(range(t_cfg.T, len(y_train_pred) + t_cfg.T), y_train_pred,
-                     label='Predicted - Train')
+                     label='Predicted - Train') # color= "orange"
             plt.plot(range(t_cfg.T + len(y_train_pred), len(train_data.targs) + 1), y_test_pred,
-                     label='Predicted - Test')
+                     label='Predicted - Test') # color= 'green'
             plt.legend(loc='upper left')
             utils.save_or_show_plot(f"pred_{e_i}.png", save_plots)
 
@@ -174,7 +181,6 @@ def predict(t_net: DaRnnNet, t_dat: TrainData, train_size: int, batch_size: int,
         print(batch_size)
         y_pred = np.zeros((t_dat.feats.shape[0] - train_size, out_size))
 
-        print("len ypred: ----------------------------------------------------------------------")
         print(len(y_pred))
 
     for y_i in range(0, len(y_pred), batch_size):
@@ -207,23 +213,53 @@ def predict(t_net: DaRnnNet, t_dat: TrainData, train_size: int, batch_size: int,
 save_plots = True
 debug = False
 
-def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "weight_tensor.pt", iter_loss_dir="iter_loss.npy" , \
+"""
+
+ Most of the important parameters for our model can be modified here:
+
+    - train_data: This parameter is an instance of the TrainData class and
+    contains the training data that will be used to train the model.
+
+    - n_targs: This parameter is an integer that specifies the number of target
+    variables in the training data. In other words, it specifies the number of variables 
+    that the model is trying to predict.
+
+    - encoder_hidden_size: This parameter is an integer that specifies the number 
+    of hidden units in the encoder LSTM layer of the model.
+
+    - decoder_hidden_size: This parameter is an integer that specifies the number of hidden units
+    in the decoder LSTM layer of the model.
+
+    - T: This parameter is an integer that specifies the window sized used for prediction.
+
+    - learning_rate: This parameter is a float that specifies the learning rate to be used 
+    during training.
+
+    - batch_size: This parameter is an integer that specifies the size of the mini-batches
+    to be used during training.
+
+
+
+
+"""
+
+
+def run_all(data="splits/crop_0.csv", targ_cols= ('937',) ,  weight_tensor_dir= "weight_tensor.pt", iter_loss_dir="iter_loss.npy" , \
              epoch_loss_dir= "epoch_loss.npy", final_y_pred_dir="final_y_pred.npy" ):
     
     raw_data = pd.read_csv(data)
 
     # For every pixel in area we want a column with its intensity at different times.
     logger.info(f"Shape of data: {raw_data.shape}.\nMissing in data: {raw_data.isnull().sum().sum()}.")
-    # print(list(raw_data.columns)) -> first column name is # 1 (TODO: fix)
 
-    # This are the columns we want to use as labels
+    # Thes are the columns we want to use as labels
     
     data, scaler = preprocess_data(raw_data, targ_cols)
 
     # We can change batch_size and T
     da_rnn_kwargs = {"batch_size": 128, "T": 10}
     config, model = da_rnn(data, n_targs=len(targ_cols), learning_rate=.01, **da_rnn_kwargs)
-
+    
     if os.path.exists(weight_tensor_dir):
         weight_tensor = torch.load(weight_tensor_dir)
         iter_loss = np.load(iter_loss_dir)
@@ -231,27 +267,27 @@ def run_all(data="data/data1.csv", targ_cols= ('200',) ,  weight_tensor_dir= "we
         final_y_pred = np.load(final_y_pred_dir)
 
     else:
-        iter_loss, epoch_loss = train(model, data, config, n_epochs=10, save_plots=save_plots)
-        final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
+        iter_loss, epoch_loss = train(model, data, config, n_epochs=5, save_plots=save_plots)
+    
+    
+    final_y_pred, input_weighted = predict(model, data, config.train_size, config.batch_size, config.T)
 
 
-        weight_tensor = torch.cat(input_weighted, dim=0)
-        torch.save(weight_tensor, weight_tensor_dir)
-        np.save(iter_loss_dir, iter_loss)
-        np.save(epoch_loss_dir, epoch_loss)
-        np.save(final_y_pred_dir,final_y_pred)
+    weight_tensor = torch.cat(input_weighted, dim=0)
+    
+    torch.save(weight_tensor, weight_tensor_dir)
+    np.save(iter_loss_dir, iter_loss)
+    np.save(epoch_loss_dir, epoch_loss)
+    np.save(final_y_pred_dir,final_y_pred)
 
     print(weight_tensor.shape)
+    create_plots(iter_loss, epoch_loss, final_y_pred, data, config)
 
-    #create_plots(iter_loss, epoch_loss, final_y_pred, data, config)
     
-    # This code saves the model:
 
-    #with open(os.path.join("data", "da_rnn_kwargs.json"), "w") as fi:
-        # json.dump(da_rnn_kwargs, fi, indent=4)
-    #joblib.dump(scaler, os.path.join("data", "scaler.pkl"))
-    #torch.save(model.encoder.state_dict(), os.path.join("data", "encoder.torch"))
-    #torch.save(model.decoder.state_dict(), os.path.join("data", "decoder.torch"))
+ 
+    
+    
 
 
 def create_plots(iter_loss, epoch_loss, final_y_pred, data, config):
@@ -264,12 +300,10 @@ def create_plots(iter_loss, epoch_loss, final_y_pred, data, config):
     utils.save_or_show_plot("epoch_loss.png", save_plots)
 
     plt.figure()
-    plt.plot(final_y_pred, label='Predicted')
-    plt.plot(data.targs[config.train_size:], label="True")
+    plt.plot(data.targs[config.train_size:], label="True") #,color= "blue"
+    plt.plot(final_y_pred, label='Predicted') # color= "orange"
     plt.legend(loc='upper left')
     utils.save_or_show_plot("final_predicted.png", save_plots)
-
-
 
 
 
@@ -309,19 +343,16 @@ def update(frame, weight_tensor):
     plt.title('Frame {}'.format(frame))
     plt.tight_layout()
 
+
+
+# shape weights= (8700, 936)
+
+run_all("./splits/crop_4.csv",('936',),"./results_4/weight_tensor_rs.pt", "iter_loss_rs.npy" , \
+             "epoch_loss_rs.npy", "final_y_pred_rs.npy" )
+
+
 # Create the animation
 #fig = plt.figure(figsize=(6, 6))
 # Frames need to be numbver of frames we want in our animation
 #ani = animation.FuncAnimation(fig, update, frames=8700, interval=200)
 #ani.save('heatmap.mp4', writer='ffmpeg', bitrate=1000)
-
-
-
-
-
-
-
-
-
-run_all("resized_data.csv",('1892',),"weight_tensor_rs.pt", "iter_loss_rs.npy" , \
-             "epoch_loss_rs.npy", "final_y_pred_rs.npy" )
